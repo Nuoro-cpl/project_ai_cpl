@@ -63,7 +63,7 @@ async def root():
 # Modelos Pydantic com estrutura corrigida
 class CriarPlanilhaRequest(BaseModel):
     nome_planilha: str = Field(description="Nome da planilha a ser criada")
-    email_compartilhamento: str = Field(default="vinicius.matsumoto@fgv.br", description="Email para compartilhamento")
+    email_compartilhamento: str = Field(default="compliancenuoropay@gmail.com", description="Email para compartilhamento")
 
 class ListarPlanilhasRequest(BaseModel):
     limite: int = Field(default=20, description="Número máximo de planilhas a listar")
@@ -90,13 +90,13 @@ class NaturalLanguageQuery(BaseModel):
 
 # Registrar ferramentas MCP
 @mcp.tool()
-def criar_planilha(nome_planilha: str, email_compartilhamento: str = "vinicius.matsumoto@fgv.br") -> dict:
+def criar_planilha(nome_planilha: str, email_compartilhamento: str = "compliancenuoropay@gmail.com") -> dict:
     """
     Cria uma nova planilha no Google Drive e a compartilha com o email especificado.
     
     Args:
         nome_planilha: Nome da planilha a ser criada
-        email_compartilhamento: Email com quem compartilhar (padrão: vinicius.matsumoto@fgv.br)
+        email_compartilhamento: Email com quem compartilhar (padrão: compliancenuoropay@gmail.com)
     """
     try:
         return drive.criar_planilha(nome_planilha, email_compartilhamento)

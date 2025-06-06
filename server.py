@@ -31,7 +31,7 @@ client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY els
 
 app = FastAPI(
     title="Google Sheets MCP API",
-    description="API para gerenciamento de planilhas Google Sheets com MCP",
+    description="API para gerenciamento completo de planilhas Google Sheets com MCP",
     version="1.0.0"
 )
 
@@ -53,7 +53,11 @@ async def root():
         "features": [
             "Criar planilhas",
             "Listar planilhas",
+            "Listar abas",
             "Criar abas",
+            "Ler dados",
+            "Ler célula específica",
+            "Buscar dados",
             "Sobrescrever dados",
             "Adicionar dados",
             "Linguagem natural com Claude"
@@ -67,6 +71,26 @@ class CriarPlanilhaRequest(BaseModel):
 
 class ListarPlanilhasRequest(BaseModel):
     limite: int = Field(default=20, description="Número máximo de planilhas a listar")
+
+class ListarAbasRequest(BaseModel):
+    planilha_id: str = Field(description="ID da planilha no Google Drive")
+
+class LerDadosRequest(BaseModel):
+    planilha_id: str = Field(description="ID da planilha no Google Drive")
+    nome_aba: str = Field(default="Principal", description="Nome da aba a ser lida")
+    intervalo: str = Field(default="", description="Intervalo específico (ex: 'A1:C10'), vazio para ler tudo")
+    incluir_cabecalhos: bool = Field(default=True, description="Se deve incluir os cabeçalhos")
+
+class LerCelulaRequest(BaseModel):
+    planilha_id: str = Field(description="ID da planilha no Google Drive")
+    nome_aba: str = Field(description="Nome da aba")
+    celula: str = Field(description="Endereço da célula (ex: 'A1', 'B5')")
+
+class BuscarDadosRequest(BaseModel):
+    planilha_id: str = Field(description="ID da planilha no Google Drive")
+    nome_aba: str = Field(description="Nome da aba")
+    termo_busca: str = Field(description="Termo a ser buscado")
+    coluna_busca: Optional[str] = Field(default=None, description="Nome da coluna específica para buscar")
 
 class CriarAbaRequest(BaseModel):
     planilha_id: str = Field(description="ID da planilha no Google Drive")
@@ -115,6 +139,76 @@ def listar_planilhas(limite: int = 20) -> dict:
         return drive.listar_planilhas(limite)
     except Exception as e:
         return {"erro": f"Erro ao listar planilhas: {str(e)}"}
+
+@mcp.tool()
+def listar_abas(planilha_id: str) -> dict:
+    """
+    Lista todas as abas de uma planilha específica.
+    
+    Args:
+        planilha_id: ID da planilha no Google Drive
+    """
+    try:
+        return drive.listar_abas(planilha_id)
+    except Exception as e:
+        return {"erro": f"Erro ao listar abas: {str(e)}"}
+
+@mcp.tool()
+def ler_dados(
+    planilha_id: str,
+    nome_aba: str = "Principal",
+    intervalo: str = "",
+    incluir_cabecalhos: bool = True
+) -> dict:
+    """
+    Lê dados de uma aba específica da planilha.
+    
+    Args:
+        planilha_id: ID da planilha no Google Drive
+        nome_aba: Nome da aba a ser lida (padrão: "Principal")
+        intervalo: Intervalo específico (ex: "A1:C10"), vazio para ler tudo
+        incluir_cabecalhos: Se deve incluir os cabeçalhos na primeira linha
+    """
+    try:
+        return drive.ler_dados(planilha_id, nome_aba, intervalo, incluir_cabecalhos)
+    except Exception as e:
+        return {"erro": f"Erro ao ler dados: {str(e)}"}
+
+@mcp.tool()
+def ler_celula(planilha_id: str, nome_aba: str, celula: str) -> dict:
+    """
+    Lê o valor de uma célula específica.
+    
+    Args:
+        planilha_id: ID da planilha no Google Drive
+        nome_aba: Nome da aba
+        celula: Endereço da célula (ex: "A1", "B5")
+    """
+    try:
+        return drive.ler_celula(planilha_id, nome_aba, celula)
+    except Exception as e:
+        return {"erro": f"Erro ao ler célula: {str(e)}"}
+
+@mcp.tool()
+def buscar_dados(
+    planilha_id: str,
+    nome_aba: str,
+    termo_busca: str,
+    coluna_busca: str = None
+) -> dict:
+    """
+    Busca dados específicos em uma aba.
+    
+    Args:
+        planilha_id: ID da planilha no Google Drive
+        nome_aba: Nome da aba
+        termo_busca: Termo a ser buscado
+        coluna_busca: Nome da coluna específica para buscar (opcional)
+    """
+    try:
+        return drive.buscar_dados(planilha_id, nome_aba, termo_busca, coluna_busca)
+    except Exception as e:
+        return {"erro": f"Erro ao buscar dados: {str(e)}"}
 
 @mcp.tool()
 def criar_aba(planilha_id: str, nome_aba: str, linhas: int = 100, colunas: int = 20) -> dict:
@@ -185,6 +279,60 @@ async def api_listar_planilhas(limite: int = 20):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/listar_abas")
+async def api_listar_abas(query: ListarAbasRequest):
+    """
+    Lista todas as abas de uma planilha específica.
+    """
+    try:
+        result = drive.listar_abas(query.planilha_id)
+        return {"result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ler_dados")
+async def api_ler_dados(query: LerDadosRequest):
+    """
+    Lê dados de uma aba específica da planilha.
+    """
+    try:
+        result = drive.ler_dados(
+            query.planilha_id, 
+            query.nome_aba, 
+            query.intervalo, 
+            query.incluir_cabecalhos
+        )
+        return {"result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ler_celula")
+async def api_ler_celula(query: LerCelulaRequest):
+    """
+    Lê o valor de uma célula específica.
+    """
+    try:
+        result = drive.ler_celula(query.planilha_id, query.nome_aba, query.celula)
+        return {"result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/buscar_dados")
+async def api_buscar_dados(query: BuscarDadosRequest):
+    """
+    Busca dados específicos em uma aba.
+    """
+    try:
+        result = drive.buscar_dados(
+            query.planilha_id, 
+            query.nome_aba, 
+            query.termo_busca, 
+            query.coluna_busca
+        )
+        return {"result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/criar_aba")
 async def api_criar_aba(query: CriarAbaRequest):
     """
@@ -239,7 +387,7 @@ Pergunta: {query.pergunta}
 Retorne um JSON neste formato:
 
 {{
-  "tipo_consulta": "criar_planilha" ou "listar_planilhas" ou "criar_aba" ou "sobrescrever_aba" ou "adicionar_celulas",
+  "tipo_consulta": "criar_planilha" ou "listar_planilhas" ou "listar_abas" ou "ler_dados" ou "ler_celula" ou "buscar_dados" ou "criar_aba" ou "sobrescrever_aba" ou "adicionar_celulas",
   "parametros": {{}}
 }}
 
@@ -247,14 +395,32 @@ PARÂMETROS PARA CADA TIPO:
 
 - criar_planilha: {{"nome_planilha": "string", "email_compartilhamento": "email@exemplo.com"}} (email é opcional)
 - listar_planilhas: {{"limite": numero}} (limite é opcional, padrão 20)
+- listar_abas: {{"planilha_id": "string"}}
+- ler_dados: {{"planilha_id": "string", "nome_aba": "string", "intervalo": "A1:C10", "incluir_cabecalhos": true}} (nome_aba, intervalo e incluir_cabecalhos opcionais)
+- ler_celula: {{"planilha_id": "string", "nome_aba": "string", "celula": "A1"}}
+- buscar_dados: {{"planilha_id": "string", "nome_aba": "string", "termo_busca": "string", "coluna_busca": "string"}} (coluna_busca opcional)
 - criar_aba: {{"planilha_id": "string", "nome_aba": "string", "linhas": numero, "colunas": numero}} (linhas e colunas opcionais)
 - sobrescrever_aba: {{"planilha_id": "string", "nome_aba": "string", "dados": [["linha1col1", "linha1col2"], ["linha2col1", "linha2col2"]]}}
 - adicionar_celulas: {{"planilha_id": "string", "nome_aba": "string", "dados": [["linha1col1", "linha1col2"]]}}
 
-EXEMPLOS:
+EXEMPLOS DETALHADOS:
 - "Crie uma planilha chamada Vendas 2024" → {{"tipo_consulta": "criar_planilha", "parametros": {{"nome_planilha": "Vendas 2024"}}}}
 - "Liste minhas planilhas" → {{"tipo_consulta": "listar_planilhas", "parametros": {{}}}}
-- "Adicione dados na aba Principal da planilha abc123" → {{"tipo_consulta": "adicionar_celulas", "parametros": {{"planilha_id": "abc123", "nome_aba": "Principal", "dados": [["Nome", "Idade"], ["João", "30"]]}}}}
+- "Liste as abas da planilha abc123" → {{"tipo_consulta": "listar_abas", "parametros": {{"planilha_id": "abc123"}}}}
+- "Leia a aba Principal da planilha abc123" → {{"tipo_consulta": "ler_dados", "parametros": {{"planilha_id": "abc123", "nome_aba": "Principal"}}}}
+- "Leia as células A1 até C10 da aba Vendas" → {{"tipo_consulta": "ler_dados", "parametros": {{"planilha_id": "abc123", "nome_aba": "Vendas", "intervalo": "A1:C10"}}}}
+- "Qual o valor da célula A1 da aba Principal?" → {{"tipo_consulta": "ler_celula", "parametros": {{"planilha_id": "abc123", "nome_aba": "Principal", "celula": "A1"}}}}
+- "Busque por 'João' na planilha abc123" → {{"tipo_consulta": "buscar_dados", "parametros": {{"planilha_id": "abc123", "nome_aba": "Principal", "termo_busca": "João"}}}}
+- "Busque por 'São Paulo' na coluna Cidade" → {{"tipo_consulta": "buscar_dados", "parametros": {{"planilha_id": "abc123", "nome_aba": "Principal", "termo_busca": "São Paulo", "coluna_busca": "Cidade"}}}}
+
+PALAVRAS-CHAVE PARA IDENTIFICAR TIPOS:
+- LEITURA: "leia", "ler", "mostrar", "exibir", "dados", "conteúdo"
+- CÉLULA: "célula", "valor da célula", "A1", "B5", etc.
+- BUSCAR: "buscar", "procurar", "encontrar", "pesquisar"
+- LISTAR: "listar", "mostrar", "abas", "planilhas"
+- CRIAR: "criar", "nova planilha", "nova aba"
+- ADICIONAR: "adicionar", "inserir", "acrescentar"
+- SOBRESCREVER: "sobrescrever", "substituir", "limpar e adicionar"
 
 Apenas o JSON. Nenhuma explicação.
 """
@@ -281,6 +447,14 @@ Apenas o JSON. Nenhuma explicação.
             resultado = drive.criar_planilha(**parametros)
         elif tipo_consulta == "listar_planilhas":
             resultado = drive.listar_planilhas(**parametros)
+        elif tipo_consulta == "listar_abas":
+            resultado = drive.listar_abas(**parametros)
+        elif tipo_consulta == "ler_dados":
+            resultado = drive.ler_dados(**parametros)
+        elif tipo_consulta == "ler_celula":
+            resultado = drive.ler_celula(**parametros)
+        elif tipo_consulta == "buscar_dados":
+            resultado = drive.buscar_dados(**parametros)
         elif tipo_consulta == "criar_aba":
             resultado = drive.criar_nova_aba(**parametros)
         elif tipo_consulta == "sobrescrever_aba":
@@ -363,6 +537,10 @@ async def debug_status():
             "funcionalidades": {
                 "criar_planilha": True,
                 "listar_planilhas": True,
+                "listar_abas": True,
+                "ler_dados": True,
+                "ler_celula": True,
+                "buscar_dados": True,
                 "criar_aba": True,
                 "sobrescrever_aba": True,
                 "adicionar_celulas": True,
@@ -414,8 +592,7 @@ async def test_drive_connection():
             "mensagem": f"Erro ao testar conexão: {str(e)}"
         }
 
-# Substitua a função get_custom_openapi() existente por esta:
-
+# Configuração personalizada do OpenAPI
 def get_custom_openapi():
     """Personaliza a descrição OpenAPI."""
     if app.openapi_schema:
@@ -425,18 +602,30 @@ def get_custom_openapi():
         title="Google Sheets MCP API",
         version="1.0.0",
         description="""
-        API para gerenciamento de planilhas Google Sheets com suporte a MCP (Model Context Protocol).
+        API completa para gerenciamento de planilhas Google Sheets com suporte a MCP (Model Context Protocol).
         
-        ## Funcionalidades
+        ## 🚀 Funcionalidades
         - ✅ Criar planilhas
         - ✅ Listar planilhas
+        - ✅ Listar abas
+        - ✅ **Ler dados completos**
+        - ✅ **Ler célula específica**
+        - ✅ **Buscar dados**
         - ✅ Criar abas
         - ✅ Sobrescrever dados
         - ✅ Adicionar dados
         - ✅ Linguagem natural com Claude
         
-        ## Autenticação
-        Utiliza Service Account do Google Cloud com credenciais em variável de ambiente.
+        ## 🔧 Operações de Leitura
+        - **Ler dados**: Lê dados completos de uma aba com opções de intervalo e cabeçalhos
+        - **Ler célula**: Lê valor específico de uma célula
+        - **Buscar dados**: Busca termos específicos nas planilhas
+        
+        ## 🤖 Linguagem Natural
+        Processe comandos em português como:
+        - "Leia a aba Principal da planilha XYZ"
+        - "Busque por 'João' na planilha ABC"
+        - "Qual o valor da célula A1?"
         """,
         routes=app.routes,
     )
@@ -445,7 +634,7 @@ def get_custom_openapi():
     render_external_url = os.getenv("RENDER_EXTERNAL_URL")
     
     if render_external_url:
-        # Produção no Render - usa apenas a URL externa
+        # Produção no Render
         openapi_schema["servers"] = [
             {
                 "url": render_external_url,
@@ -453,7 +642,7 @@ def get_custom_openapi():
             }
         ]
     else:
-        # Desenvolvimento local - usa apenas localhost
+        # Desenvolvimento local
         port = int(os.getenv("PORT", 10000))
         openapi_schema["servers"] = [
             {
@@ -464,7 +653,6 @@ def get_custom_openapi():
     
     app.openapi_schema = openapi_schema
     return app.openapi_schema
-
 
 @app.get("/openapi.json")
 def custom_openapi_route():
@@ -493,4 +681,5 @@ if __name__ == "__main__":
     print(f"Iniciando servidor Google Sheets MCP na porta {port}", file=sys.stderr)
     print(f"Documentação disponível em: http://localhost:{port}/docs", file=sys.stderr)
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 

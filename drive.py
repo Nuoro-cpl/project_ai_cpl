@@ -747,6 +747,6 @@ def adicionar_celulas(
         return {
             "sucesso": False,
             "erro": str(e)
-        }
+        } 
 
 

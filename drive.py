@@ -4,7 +4,6 @@ import sys
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.oauth2 import service_account
-import pandas as pd
 from typing import List, Dict, Any, Optional
 
 # Configuração de diagnóstico e logging
@@ -201,6 +200,279 @@ def listar_planilhas(limite: int = 20) -> Dict[str, Any]:
         
     except Exception as e:
         log_debug(f"Erro ao listar planilhas: {str(e)}")
+        return {
+            "sucesso": False,
+            "erro": str(e)
+        }
+
+def listar_abas(planilha_id: str) -> Dict[str, Any]:
+    """
+    Lista todas as abas de uma planilha específica.
+    
+    Args:
+        planilha_id: ID da planilha no Google Drive
+        
+    Returns:
+        Dicionário com lista de abas
+    """
+    try:
+        if not services:
+            return {"erro": "Serviços Sheets não inicializados corretamente"}
+            
+        sheets_service = services['sheets']
+        
+        log_debug(f"Listando abas da planilha: {planilha_id}")
+        
+        # Obtém informações da planilha
+        planilha_info = sheets_service.spreadsheets().get(spreadsheetId=planilha_id).execute()
+        
+        abas = []
+        for sheet in planilha_info.get('sheets', []):
+            properties = sheet.get('properties', {})
+            aba = {
+                "id": properties.get('sheetId'),
+                "nome": properties.get('title'),
+                "indice": properties.get('index'),
+                "tipo": properties.get('sheetType', 'GRID'),
+                "linhas": properties.get('gridProperties', {}).get('rowCount', 0),
+                "colunas": properties.get('gridProperties', {}).get('columnCount', 0)
+            }
+            abas.append(aba)
+        
+        log_debug(f"Encontradas {len(abas)} abas")
+        return {
+            "sucesso": True,
+            "mensagem": f"Encontradas {len(abas)} abas",
+            "planilha_id": planilha_id,
+            "abas": abas
+        }
+        
+    except HttpError as e:
+        log_debug(f"Erro HTTP ao listar abas: {str(e)}")
+        return {
+            "sucesso": False,
+            "erro": f"Não foi possível acessar a planilha: {str(e)}"
+        }
+    except Exception as e:
+        log_debug(f"Erro ao listar abas: {str(e)}")
+        return {
+            "sucesso": False,
+            "erro": str(e)
+        }
+
+def ler_dados(
+    planilha_id: str,
+    nome_aba: str = "Principal",
+    intervalo: str = "",
+    incluir_cabecalhos: bool = True
+) -> Dict[str, Any]:
+    """
+    Lê dados de uma aba específica da planilha.
+    
+    Args:
+        planilha_id: ID da planilha no Google Drive
+        nome_aba: Nome da aba a ser lida (padrão: "Principal")
+        intervalo: Intervalo específico (ex: "A1:C10"), vazio para ler tudo
+        incluir_cabecalhos: Se deve incluir os cabeçalhos na primeira linha
+        
+    Returns:
+        Dicionário com os dados lidos
+    """
+    try:
+        if not services:
+            return {"erro": "Serviços Sheets não inicializados corretamente"}
+            
+        sheets_service = services['sheets']
+        
+        # Define o intervalo para leitura
+        if intervalo:
+            range_name = f"{nome_aba}!{intervalo}"
+        else:
+            range_name = nome_aba
+        
+        log_debug(f"Lendo dados da planilha {planilha_id}, aba {nome_aba}, intervalo: {range_name}")
+        
+        # Lê os dados
+        result = sheets_service.spreadsheets().values().get(
+            spreadsheetId=planilha_id,
+            range=range_name,
+            valueRenderOption='FORMATTED_VALUE',
+            dateTimeRenderOption='FORMATTED_STRING'
+        ).execute()
+        
+        values = result.get('values', [])
+        
+        if not values:
+            log_debug("Nenhum dado encontrado")
+            return {
+                "sucesso": True,
+                "mensagem": "Aba vazia ou sem dados",
+                "planilha_id": planilha_id,
+                "aba_nome": nome_aba,
+                "total_linhas": 0,
+                "dados": []
+            }
+        
+        # Processa os dados para JSON estruturado
+        dados_processados = []
+        cabecalhos = None
+        
+        if incluir_cabecalhos and len(values) > 0:
+            cabecalhos = values[0]
+            dados_linhas = values[1:] if len(values) > 1 else []
+            
+            # Converte para lista de dicionários usando cabeçalhos
+            for linha in dados_linhas:
+                # Garante que a linha tenha o mesmo número de colunas que os cabeçalhos
+                linha_ajustada = linha + [''] * (len(cabecalhos) - len(linha))
+                linha_dict = {}
+                for i, cabecalho in enumerate(cabecalhos):
+                    linha_dict[cabecalho] = linha_ajustada[i] if i < len(linha_ajustada) else ''
+                dados_processados.append(linha_dict)
+        else:
+            # Sem cabeçalhos - retorna como lista de listas
+            dados_processados = values
+        
+        log_debug(f"Dados lidos com sucesso: {len(values)} linhas")
+        return {
+            "sucesso": True,
+            "mensagem": f"Dados lidos com sucesso da aba '{nome_aba}'",
+            "planilha_id": planilha_id,
+            "aba_nome": nome_aba,
+            "intervalo_lido": range_name,
+            "total_linhas": len(values),
+            "cabecalhos": cabecalhos,
+            "dados": dados_processados
+        }
+        
+    except HttpError as e:
+        log_debug(f"Erro HTTP ao ler dados: {str(e)}")
+        return {
+            "sucesso": False,
+            "erro": f"Não foi possível acessar a planilha ou aba: {str(e)}"
+        }
+    except Exception as e:
+        log_debug(f"Erro ao ler dados: {str(e)}")
+        return {
+            "sucesso": False,
+            "erro": str(e)
+        }
+
+def ler_celula(
+    planilha_id: str,
+    nome_aba: str,
+    celula: str
+) -> Dict[str, Any]:
+    """
+    Lê o valor de uma célula específica.
+    
+    Args:
+        planilha_id: ID da planilha no Google Drive
+        nome_aba: Nome da aba
+        celula: Endereço da célula (ex: "A1", "B5")
+        
+    Returns:
+        Dicionário com o valor da célula
+    """
+    try:
+        if not services:
+            return {"erro": "Serviços Sheets não inicializados corretamente"}
+            
+        sheets_service = services['sheets']
+        
+        range_name = f"{nome_aba}!{celula}"
+        
+        log_debug(f"Lendo célula {celula} da aba {nome_aba}")
+        
+        result = sheets_service.spreadsheets().values().get(
+            spreadsheetId=planilha_id,
+            range=range_name,
+            valueRenderOption='FORMATTED_VALUE'
+        ).execute()
+        
+        values = result.get('values', [])
+        valor = values[0][0] if values and len(values[0]) > 0 else ""
+        
+        log_debug(f"Valor da célula {celula}: {valor}")
+        return {
+            "sucesso": True,
+            "mensagem": f"Valor da célula {celula} lido com sucesso",
+            "planilha_id": planilha_id,
+            "aba_nome": nome_aba,
+            "celula": celula,
+            "valor": valor
+        }
+        
+    except Exception as e:
+        log_debug(f"Erro ao ler célula: {str(e)}")
+        return {
+            "sucesso": False,
+            "erro": str(e)
+        }
+
+def buscar_dados(
+    planilha_id: str,
+    nome_aba: str,
+    termo_busca: str,
+    coluna_busca: str = None
+) -> Dict[str, Any]:
+    """
+    Busca dados específicos em uma aba.
+    
+    Args:
+        planilha_id: ID da planilha no Google Drive
+        nome_aba: Nome da aba
+        termo_busca: Termo a ser buscado
+        coluna_busca: Nome da coluna específica para buscar (opcional)
+        
+    Returns:
+        Dicionário com os resultados da busca
+    """
+    try:
+        # Primeiro lê todos os dados
+        resultado_leitura = ler_dados(planilha_id, nome_aba, incluir_cabecalhos=True)
+        
+        if not resultado_leitura.get("sucesso"):
+            return resultado_leitura
+        
+        dados = resultado_leitura.get("dados", [])
+        cabecalhos = resultado_leitura.get("cabecalhos", [])
+        
+        resultados = []
+        
+        for i, linha in enumerate(dados):
+            if isinstance(linha, dict):
+                # Busca em coluna específica
+                if coluna_busca and coluna_busca in linha:
+                    if termo_busca.lower() in str(linha[coluna_busca]).lower():
+                        resultados.append({
+                            "linha": i + 2,  # +2 porque começamos da linha 2 (após cabeçalho)
+                            "dados": linha
+                        })
+                # Busca em todas as colunas
+                elif not coluna_busca:
+                    for valor in linha.values():
+                        if termo_busca.lower() in str(valor).lower():
+                            resultados.append({
+                                "linha": i + 2,
+                                "dados": linha
+                            })
+                            break
+        
+        log_debug(f"Busca concluída: {len(resultados)} resultados encontrados")
+        return {
+            "sucesso": True,
+            "mensagem": f"Busca concluída: {len(resultados)} resultados encontrados",
+            "planilha_id": planilha_id,
+            "aba_nome": nome_aba,
+            "termo_busca": termo_busca,
+            "coluna_busca": coluna_busca,
+            "total_resultados": len(resultados),
+            "resultados": resultados
+        }
+        
+    except Exception as e:
+        log_debug(f"Erro na busca: {str(e)}")
         return {
             "sucesso": False,
             "erro": str(e)
@@ -477,76 +749,4 @@ def adicionar_celulas(
             "erro": str(e)
         }
 
-# Funções auxiliares para conversão de dados
-def dataframe_para_lista(df: pd.DataFrame) -> List[List[Any]]:
-    """
-    Converte um DataFrame do pandas para o formato de lista de listas
-    usado pelas funções de planilhas Google.
-    
-    Args:
-        df: DataFrame do pandas
-        
-    Returns:
-        Lista de listas com os dados do DataFrame, incluindo cabeçalhos
-    """
-    # Obtém as colunas como primeira linha
-    headers = df.columns.tolist()
-    
-    # Converte os dados para listas
-    data = df.values.tolist()
-    
-    # Retorna cabeçalhos + dados
-    return [headers] + data
-
-def dados_para_lista(dados: str, formato: str = "auto") -> List[List[Any]]:
-    """
-    Converte uma string JSON ou CSV para o formato de lista de listas
-    usado pelas funções de planilhas Google.
-    
-    Args:
-        dados: String contendo dados em formato JSON ou CSV
-        formato: "json", "csv" ou "auto" para detecção automática
-        
-    Returns:
-        Lista de listas com os dados convertidos
-    """
-    if formato == "auto":
-        # Tentativa de detecção automática
-        dados = dados.strip()
-        if dados.startswith('[') and dados.endswith(']'):
-            formato = "json"
-        else:
-            formato = "csv"
-    
-    try:
-        if formato == "json":
-            # Tenta interpretar como JSON
-            json_data = json.loads(dados)
-            
-            # Se for uma lista de dicionários, converte para DataFrame e depois para lista
-            if isinstance(json_data, list) and len(json_data) > 0 and isinstance(json_data[0], dict):
-                df = pd.DataFrame(json_data)
-                return dataframe_para_lista(df)
-            
-            # Se for uma lista de listas, retorna diretamente
-            elif isinstance(json_data, list) and len(json_data) > 0 and isinstance(json_data[0], list):
-                return json_data
-            
-            # Caso contrário, cria um DataFrame com uma única coluna
-            else:
-                df = pd.DataFrame({'dados': [json_data]})
-                return dataframe_para_lista(df)
-                
-        elif formato == "csv":
-            # Tenta interpretar como CSV
-            df = pd.read_csv(pd.StringIO(dados))
-            return dataframe_para_lista(df)
-            
-        else:
-            raise ValueError(f"Formato desconhecido: {formato}")
-            
-    except Exception as e:
-        log_debug(f"Erro ao converter dados: {str(e)}")
-        # Retorna uma matriz com uma mensagem de erro
-        return [["Erro ao processar dados", str(e)]]
 

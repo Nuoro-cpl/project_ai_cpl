@@ -62,13 +62,13 @@ def init_drive_client():
 # Inicializa os serviços uma vez
 services = init_drive_client()
 
-def criar_planilha(nome_planilha: str, email_compartilhamento: str = "vinicius.matsumoto@fgv.br") -> Dict[str, Any]:
+def criar_planilha(nome_planilha: str, email_compartilhamento: str = "compliancenuoropay@gmail.com") -> Dict[str, Any]:
     """
     Cria uma nova planilha no Google Drive e a compartilha com o email especificado.
     
     Args:
         nome_planilha: Nome da nova planilha
-        email_compartilhamento: Email com quem compartilhar (padrão: vinicius.matsumoto@fgv.br)
+        email_compartilhamento: Email com quem compartilhar (padrão: compliancenuoropay@gmail.com)
         
     Returns:
         Dicionário com informações da planilha criada

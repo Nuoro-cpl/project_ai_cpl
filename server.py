@@ -63,7 +63,7 @@ async def root():
 # Modelos Pydantic com estrutura corrigida
 class CriarPlanilhaRequest(BaseModel):
     nome_planilha: str = Field(description="Nome da planilha a ser criada")
-    email_compartilhamento: str = Field(default="compliancenuoropay@gmail.com", description="Email para compartilhamento")
+    email_compartilhamento: str = Field(default="vinicius.matsumoto@fgv.br", description="Email para compartilhamento")
 
 class ListarPlanilhasRequest(BaseModel):
     limite: int = Field(default=20, description="Número máximo de planilhas a listar")
@@ -90,13 +90,13 @@ class NaturalLanguageQuery(BaseModel):
 
 # Registrar ferramentas MCP
 @mcp.tool()
-def criar_planilha(nome_planilha: str, email_compartilhamento: str = "compliancenuoropay@gmail.com") -> dict:
+def criar_planilha(nome_planilha: str, email_compartilhamento: str = "vinicius.matsumoto@fgv.br") -> dict:
     """
     Cria uma nova planilha no Google Drive e a compartilha com o email especificado.
     
     Args:
         nome_planilha: Nome da planilha a ser criada
-        email_compartilhamento: Email com quem compartilhar (padrão: compliancenuoropay@gmail.com)
+        email_compartilhamento: Email com quem compartilhar (padrão: vinicius.matsumoto@fgv.br)
     """
     try:
         return drive.criar_planilha(nome_planilha, email_compartilhamento)
@@ -414,7 +414,8 @@ async def test_drive_connection():
             "mensagem": f"Erro ao testar conexão: {str(e)}"
         }
 
-# Configuração personalizada do OpenAPI
+# Substitua a função get_custom_openapi() existente por esta:
+
 def get_custom_openapi():
     """Personaliza a descrição OpenAPI."""
     if app.openapi_schema:
@@ -436,37 +437,34 @@ def get_custom_openapi():
         
         ## Autenticação
         Utiliza Service Account do Google Cloud com credenciais em variável de ambiente.
-        
-        ## Exemplos de Uso
-        
-        ### Linguagem Natural
-        ```
-        POST /perguntar
-        {
-          "pergunta": "Crie uma planilha chamada 'Vendas Q1 2024'"
-        }
-        ```
-        
-        ### API Direta
-        ```
-        POST /api/criar_planilha
-        {
-          "nome_planilha": "Vendas Q1 2024",
-          "email_compartilhamento": "usuario@exemplo.com"
-        }
-        ```
         """,
         routes=app.routes,
     )
     
-    # Adiciona informações sobre o servidor
-    openapi_schema["servers"] = [
-        {"url": "https://seu-app.onrender.com", "description": "Servidor Render"},
-        {"url": "http://localhost:10000", "description": "Desenvolvimento Local"}
-    ]
+    # Detecta ambiente automaticamente usando variáveis do Render
+    render_external_url = os.getenv("RENDER_EXTERNAL_URL")
+    
+    if render_external_url:
+        # Produção no Render - usa apenas a URL externa
+        openapi_schema["servers"] = [
+            {
+                "url": render_external_url,
+                "description": "Servidor de Produção"
+            }
+        ]
+    else:
+        # Desenvolvimento local - usa apenas localhost
+        port = int(os.getenv("PORT", 10000))
+        openapi_schema["servers"] = [
+            {
+                "url": f"http://localhost:{port}",
+                "description": "Servidor de Desenvolvimento"
+            }
+        ]
     
     app.openapi_schema = openapi_schema
     return app.openapi_schema
+
 
 @app.get("/openapi.json")
 def custom_openapi_route():
